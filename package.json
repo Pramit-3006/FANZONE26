@@ -1,0 +1,110 @@
+"use client";
+
+import { useMemo, useState } from "react";
+import { STALLS, MERCH, STALL_BUSY, busyLabel } from "@/lib/data";
+import FoodArt from "@/components/FoodArt";
+import { PageHeader, Card, AIBadge } from "@/components/UI";
+import { UtensilsCrossed, ShoppingBag, Plus, Minus, MapPin, Sparkles, Loader2, CheckCircle2, Star, Clock, Info, X, ShoppingCart } from "lucide-react";
+
+const CATS = ["All", "Food", "Halal", "Vegan", "Coffee", "Drinks", "Dessert"];
+const VEG = new Set(["Vegan", "Coffee", "Drinks", "Dessert"]);
+
+export default function FoodPage() {
+  const [tab, setTab] = useState<"food" | "merch">("food");
+  const [cat, setCat] = useState("All");
+  const [cart, setCart] = useState<Record<string, number>>({});
+  const [seat, setSeat] = useState("Sec 210, Row 12, Seat 8");
+  const [order, setOrder] = useState<any>(null);
+  const [info, setInfo] = useState<{ title: string; body: string | null } | null>(null);
+  const [rec, setRec] = useState<string | null>(null);
+  const [recLoading, setRecLoading] = useState(false);
+
+  const list = useMemo(() => (cat === "All" ? STALLS : STALLS.filter((s) => s.category === cat)), [cat]);
+  const count = Object.values(cart).reduce((a, b) => a + b, 0);
+  const add = (id: string) => setCart((c) => ({ ...c, [id]: (c[id] || 0) + 1 }));
+  const sub = (id: string) => setCart((c) => { const n = { ...c }; if (!n[id]) return n; n[id]--; if (n[id] <= 0) delete n[id]; return n; });
+
+  async function foodInfo(s: any) {
+    setInfo({ title: s.name, body: null });
+    try { const r = await fetch("/api/food-info", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: s.name, sells: s.sells, category: s.category }) }); const d = await r.json(); setInfo({ title: s.name, body: d.info }); } catch { setInfo({ title: s.name, body: "Could not load nutrition info." }); }
+  }
+  async function merchInfo(m: any) {
+    setInfo({ title: m.name, body: null });
+    try { const r = await fetch("/api/merch-info", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: m.name, kind: m.kind }) }); const d = await r.json(); setInfo({ title: m.name, body: d.info }); } catch { setInfo({ title: m.name, body: "Could not load product info." }); }
+  }
+  async function recommend() {
+    setRecLoading(true); setRec(null);
+    const menu = STALLS.map((s) => `${s.name} (${s.category}, ${STALL_BUSY[s.id]}% busy): ${s.sells}`).join("; ");
+    try { const r = await fetch("/api/ai", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: `Stalls with live congestion: ${menu}. Recommend the fastest quick bite (least busy + short wait) so I'm back before kickoff, plus one halal and one vegan pick. 3 short lines.` }) }); const d = await r.json(); setRec(d.reply); } catch { setRec("Fastest: Hydration Station (Free now). Halal: Halal Kitchen 26. Vegan: Green Card Vegan (Free now)."); } finally { setRecLoading(false); }
+  }
+  async function placeOrder() {
+    const items = Object.entries(cart).map(([id, q]) => ({ name: [...STALLS, ...MERCH].find((s) => s.id === id)?.name, qty: q }));
+    try { const r = await fetch("/api/orders", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ seat, items, total: count }) }); const d = await r.json(); setOrder(d.order || { id: "ORD", eta: 12 }); } catch { setOrder({ id: "ORD-LOCAL", eta: 12 }); }
+  }
+
+  return (
+    <div>
+      <PageHeader icon={<UtensilsCrossed className="h-7 w-7 text-pitch" />} title="Order to Seat" subtitle="Food & official merch delivered to your row — with live stall congestion and AI product info." />
+
+      <div className="mb-3 flex gap-2">
+        <button onClick={() => setTab("food")} className={`flex-1 rounded-xl py-2.5 text-sm font-semibold ${tab === "food" ? "bg-gradient-to-r from-pitch to-fifa-teal" : "glass text-white/60"}`}><UtensilsCrossed className="mr-1 inline h-4 w-4" />Food & Drinks</button>
+        <button onClick={() => setTab("merch")} className={`flex-1 rounded-xl py-2.5 text-sm font-semibold ${tab === "merch" ? "bg-gradient-to-r from-fifa-purple to-fifa-pink" : "glass text-white/60"}`}><ShoppingBag className="mr-1 inline h-4 w-4" />Official Merch</button>
+      </div>
+
+      {tab === "food" && (
+        <>
+          <Card className="mb-4"><button onClick={recommend} disabled={recLoading} className="flex items-center gap-2 text-sm font-semibold">{recLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4 text-fifa-gold" />}Ask AI for the fastest bite <AIBadge /></button>{rec && <p className="mt-2 whitespace-pre-wrap rounded-lg bg-white/5 p-3 text-sm text-white/85">{rec}</p>}</Card>
+          <div className="mb-3 flex flex-wrap gap-2">{CATS.map((c) => (<button key={c} onClick={() => setCat(c)} className={`chip px-3 py-1 text-xs ${cat === c ? "bg-pitch/20 text-pitch ring-1 ring-pitch/50" : "text-white/60"}`}>{c}</button>))}</div>
+          <div className="space-y-3">
+            {list.map((s) => { const b = busyLabel(STALL_BUSY[s.id]); const veg = VEG.has(s.category); return (
+              <div key={s.id} className="glass card-3d flex gap-3 rounded-2xl p-3">
+                <FoodArt art={s.art} className="h-20 w-24 shrink-0" />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0"><div className="flex items-center gap-1.5"><span className={`inline-block h-3 w-3 rounded-sm border ${veg ? "border-green-500" : "border-red-500"}`}><span className={`mx-auto mt-[3px] block h-1 w-1 rounded-full ${veg ? "bg-green-500" : "bg-red-500"}`} /></span><p className="truncate font-bold">{s.name}</p></div><p className="truncate text-xs text-white/50">{s.sells}</p></div>
+                    <span className="shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold" style={{ background: `${b.color}22`, color: b.color, border: `1px solid ${b.color}55` }}>● {b.label}</span>
+                  </div>
+                  <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-white/50">
+                    <span className="flex items-center gap-0.5 rounded bg-pitch/20 px-1.5 py-0.5 font-semibold text-pitch"><Star className="h-3 w-3 fill-pitch" />{s.rating}</span>
+                    <span className="flex items-center gap-0.5"><Clock className="h-3 w-3" />{s.wait} min</span>
+                    <span><MapPin className="mr-0.5 inline h-3 w-3" />{s.side} · {s.concourse}</span>
+                    <span>{s.price}</span>
+                  </div>
+                  <div className="mt-2 flex items-center justify-between">
+                    <button onClick={() => foodInfo(s)} className="flex items-center gap-1 text-[11px] text-fifa-teal"><Info className="h-3.5 w-3.5" />Nutrition & allergens <AIBadge /></button>
+                    {cart[s.id] ? (<div className="flex items-center gap-2 rounded-full bg-pitch/15 px-1"><button onClick={() => sub(s.id)} className="flex h-6 w-6 items-center justify-center text-pitch"><Minus className="h-4 w-4" /></button><span className="w-4 text-center text-sm font-bold text-pitch">{cart[s.id]}</span><button onClick={() => add(s.id)} className="flex h-6 w-6 items-center justify-center text-pitch"><Plus className="h-4 w-4" /></button></div>) : (<button onClick={() => add(s.id)} className="rounded-lg border border-pitch/50 px-4 py-1 text-xs font-bold text-pitch">ADD</button>)}
+                  </div>
+                </div>
+              </div>
+            ); })}
+          </div>
+        </>
+      )}
+
+      {tab === "merch" && (
+        <div className="grid gap-3 sm:grid-cols-2">
+          {MERCH.map((m) => { const b = busyLabel(m.busy); return (
+            <div key={m.id} className="glass card-3d rounded-2xl p-3">
+              <div className="flex gap-3"><FoodArt art={m.art} className="h-20 w-20 shrink-0" /><div className="min-w-0 flex-1"><p className="truncate font-bold">{m.name}</p><p className="text-xs text-white/50">{m.sells}</p><div className="mt-1 flex items-center gap-2 text-[11px] text-white/50"><span className="flex items-center gap-0.5 text-fifa-gold"><Star className="h-3 w-3 fill-fifa-gold" />{m.rating}</span><span>{m.price}</span><span className="rounded-full px-1.5 py-0.5" style={{ background: `${b.color}22`, color: b.color }}>{b.label}</span></div></div></div>
+              <div className="mt-2 flex items-center justify-between"><button onClick={() => merchInfo(m)} className="flex items-center gap-1 text-[11px] text-fifa-teal"><Info className="h-3.5 w-3.5" />Materials & brand <AIBadge /></button>{cart[m.id] ? (<div className="flex items-center gap-2 rounded-full bg-fifa-purple/20 px-1"><button onClick={() => sub(m.id)} className="flex h-6 w-6 items-center justify-center text-fifa-pink"><Minus className="h-4 w-4" /></button><span className="w-4 text-center text-sm font-bold">{cart[m.id]}</span><button onClick={() => add(m.id)} className="flex h-6 w-6 items-center justify-center text-fifa-pink"><Plus className="h-4 w-4" /></button></div>) : (<button onClick={() => add(m.id)} className="rounded-lg border border-fifa-pink/50 px-4 py-1 text-xs font-bold text-fifa-pink">ADD</button>)}</div>
+            </div>
+          ); })}
+        </div>
+      )}
+
+      {/* info modal */}
+      {info && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-4 sm:items-center" onClick={() => setInfo(null)}>
+          <div className="w-full max-w-md rounded-2xl border border-white/15 bg-fifa-ink p-5" onClick={(e) => e.stopPropagation()}>
+            <div className="mb-2 flex items-center justify-between"><h3 className="font-bold">{info.title} <AIBadge /></h3><button onClick={() => setInfo(null)}><X className="h-5 w-5 text-white/50" /></button></div>
+            {info.body ? <p className="whitespace-pre-wrap text-sm text-white/85">{info.body}</p> : <div className="flex items-center gap-2 py-6 text-sm text-white/60"><Loader2 className="h-4 w-4 animate-spin" />Analysing with AI…</div>}
+          </div>
+        </div>
+      )}
+
+      {/* cart */}
+      {count > 0 && !order && (<div className="fixed bottom-24 left-1/2 z-40 w-[92vw] max-w-md -translate-x-1/2 md:bottom-6"><div className="glass flex items-center gap-3 rounded-2xl p-3"><ShoppingCart className="h-5 w-5 text-fifa-gold" /><div className="flex-1 text-sm"><p className="font-semibold">{count} item{count > 1 ? "s" : ""} → your seat</p><input value={seat} onChange={(e) => setSeat(e.target.value)} className="w-full rounded bg-white/8 px-2 py-1 text-xs outline-none" /></div><button onClick={placeOrder} className="rounded-full bg-gradient-to-r from-pitch to-fifa-teal px-4 py-2 text-sm font-bold">Checkout</button></div></div>)}
+      {order && (<div className="fixed bottom-24 left-1/2 z-40 w-[92vw] max-w-md -translate-x-1/2 md:bottom-6"><div className="glass flex items-center gap-3 rounded-2xl p-4"><CheckCircle2 className="h-6 w-6 text-pitch" /><div className="flex-1 text-sm"><p className="font-bold">{order.id} confirmed → {seat}</p><p className="text-xs text-white/55">Runner arriving in ~{order.eta} min · saved to your account</p></div><button onClick={() => { setOrder(null); setCart({}); }} className="text-xs text-white/60">Done</button></div></div>)}
+    </div>
+  );
+}

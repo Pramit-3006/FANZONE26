@@ -1,0 +1,13 @@
+import { NextRequest, NextResponse } from "next/server";
+import { db } from "@/lib/supabase";
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+export async function POST(req: NextRequest) {
+  try {
+    const { seat, items, total } = await req.json();
+    const id = "ORD-" + Math.random().toString(36).slice(2, 7).toUpperCase();
+    const eta = 10 + Math.floor(Math.random() * 8);
+    await db().from("orders").insert({ id, seat: (seat || "").slice(0, 60), items: items || [], total: total || 0, eta });
+    return NextResponse.json({ ok: true, order: { id, eta } });
+  } catch { return NextResponse.json({ ok: false }, { status: 500 }); }
+}
